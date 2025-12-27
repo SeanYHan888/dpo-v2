@@ -5,8 +5,13 @@ batch_size: 16
 gradient_accumulation_steps: 1
 num_epochs: 1
 max_length: 512
-fsdp:
-  sharding_strategy: FULL_SHARD
-  wrap_policy: TRANSFORMER_BASED_WRAP
-  transformer_layer_cls: Qwen2DecoderLayer
-  sync_module_states: true
+seed: 42
+eval_ratio: 0.05
+dataset_split: train
+pad_to_multiple_of: 8
+log_every: 1
+save_every: 0
+save_final: true
+output_dir: checkpoints
+num_workers: 2
+fsdp_sync_module_states: true

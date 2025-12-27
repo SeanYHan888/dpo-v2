@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -8,6 +8,10 @@ def _sequence_log_probs(logits: torch.Tensor, labels: torch.Tensor) -> torch.Ten
     """
     Computes average log-probability per sequence, ignoring tokens with label == -100.
     """
+    # Shift for next-token prediction.
+    logits = logits[:, :-1, :].contiguous()
+    labels = labels[:, 1:].contiguous()
+
     log_probs = F.log_softmax(logits, dim=-1)
     mask = labels != -100
 
