@@ -1,0 +1,23 @@
+[project]
+name = "dpo-v2"
+version = "0.1.0"
+description = "Full-parameter SFT & DPO pipeline with FSDP"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1,<3",
+    "transformers>=4.37.0",
+    "accelerate>=0.27.0",
+    "datasets>=2.16.0",
+    "wandb>=0.16.0",
+    # flash-attn isn't supported on macOS; keep Linux x86_64 only to avoid build hangs locally
+    "flash-attn>=2.5.6; platform_system == 'Linux' and platform_machine == 'x86_64'",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[tool.uv]
+package = false
