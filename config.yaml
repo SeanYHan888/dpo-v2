@@ -16,3 +16,7 @@ output_dir: checkpoints
 num_workers: 2
 fsdp_sync_module_states: true
 fsdp_use_orig_params: true
+save_reward_margins: true
+upload_reward_margins: true
+reward_margin_dir: checkpoints/reward_margins
+reward_margin_flush_every: 100

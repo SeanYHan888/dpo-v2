@@ -1,7 +1,7 @@
 import argparse
 import functools
 import os
-from typing import Dict
+from typing import Dict, List
 
 import torch
 import torch.distributed as dist
@@ -173,6 +173,22 @@ def save_checkpoint(model: FSDP, output_dir: str, step: int, rank: int):
     torch.save({"step": step}, os.path.join(ckpt_dir, f"trainer_rank{rank}.pt"))
 
 
+def flush_reward_margins(
+    margin_buffer: List[torch.Tensor],
+    margin_dir: str,
+    rank: int,
+    part_idx: int,
+) -> int:
+    if not margin_buffer:
+        return part_idx
+    os.makedirs(margin_dir, exist_ok=True)
+    margins = torch.cat(margin_buffer, dim=0)
+    path = os.path.join(margin_dir, f"reward_margins_rank{rank}_part{part_idx}.pt")
+    torch.save(margins, path)
+    margin_buffer.clear()
+    return part_idx + 1
+
+
 def main():
     args = parse_args()
     cfg = load_config(args.config)
@@ -238,9 +254,15 @@ def main():
     save_every = cfg.get("save_every", 0)
     output_dir = cfg.get("output_dir", "checkpoints")
     num_epochs = cfg.get("num_epochs", 1)
+    save_reward_margins = cfg.get("save_reward_margins", True)
+    upload_reward_margins = cfg.get("upload_reward_margins", True)
+    reward_margin_dir = cfg.get("reward_margin_dir", os.path.join(output_dir, "reward_margins"))
+    reward_margin_flush_every = cfg.get("reward_margin_flush_every", 100)
 
     policy_model.train()
     global_step = 0
+    margin_buffer: List[torch.Tensor] = []
+    margin_part_idx = 0
 
     for epoch in range(num_epochs):
         train_sampler.set_epoch(epoch)
@@ -281,6 +303,16 @@ def main():
                     beta=cfg.get("beta", 0.1),
                 )
 
+            if save_reward_margins:
+                margin_buffer.append(reward_margin.detach().float().cpu())
+                if reward_margin_flush_every and len(margin_buffer) >= reward_margin_flush_every:
+                    margin_part_idx = flush_reward_margins(
+                        margin_buffer,
+                        reward_margin_dir,
+                        rank,
+                        margin_part_idx,
+                    )
+
             (raw_loss / grad_accum).backward()
 
             should_step = (step + 1) % grad_accum == 0 or (step + 1) == len(train_dataloader)
@@ -302,11 +334,24 @@ def main():
                 if save_every and global_step % save_every == 0:
                     save_checkpoint(policy_model, output_dir, global_step, rank)
 
+    if save_reward_margins:
+        margin_part_idx = flush_reward_margins(margin_buffer, reward_margin_dir, rank, margin_part_idx)
+
     if cfg.get("save_final", True):
         save_checkpoint(policy_model, output_dir, global_step, rank)
 
     if dist.is_initialized():
         dist.barrier()
+
+    if use_wandb and upload_reward_margins and save_reward_margins:
+        margin_files = sorted(
+            f for f in os.listdir(reward_margin_dir) if f.startswith("reward_margins_rank")
+        )
+        if margin_files:
+            artifact = wandb.Artifact("reward_margins", type="dataset")
+            for filename in margin_files:
+                artifact.add_file(os.path.join(reward_margin_dir, filename))
+            wandb.log_artifact(artifact)
 
     if use_wandb:
         wandb.finish()
