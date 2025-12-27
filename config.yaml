@@ -15,3 +15,4 @@ save_final: true
 output_dir: checkpoints
 num_workers: 2
 fsdp_sync_module_states: true
+fsdp_use_orig_params: true

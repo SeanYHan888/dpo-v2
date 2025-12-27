@@ -76,7 +76,9 @@ def init_models(model_name: str):
         torch_dtype=torch.bfloat16,
         attn_implementation="sdpa",
     )
-    policy_model.gradient_checkpointing_enable()
+    policy_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    if hasattr(policy_model, "enable_input_require_grads"):
+        policy_model.enable_input_require_grads()
     policy_model.config.use_cache = False
 
     ref_model = AutoModelForCausalLM.from_pretrained(
@@ -91,7 +93,12 @@ def init_models(model_name: str):
     return policy_model, ref_model
 
 
-def build_fsdp(model, device_id: torch.device, sync_module_states: bool):
+def build_fsdp(
+    model,
+    device_id: torch.device,
+    sync_module_states: bool,
+    use_orig_params: bool,
+):
     auto_wrap_policy = functools.partial(
         transformer_auto_wrap_policy,
         transformer_layer_cls={Qwen2DecoderLayer},
@@ -108,6 +115,7 @@ def build_fsdp(model, device_id: torch.device, sync_module_states: bool):
         mixed_precision=mixed_precision,
         device_id=device_id,
         sync_module_states=sync_module_states,
+        use_orig_params=use_orig_params,
     )
 
 
@@ -209,9 +217,10 @@ def main():
 
     policy_model, ref_model = init_models(model_name)
     sync_module_states = cfg.get("fsdp_sync_module_states", True)
+    use_orig_params = cfg.get("fsdp_use_orig_params", True)
     device_id = torch.device("cuda", local_rank)
-    policy_model = build_fsdp(policy_model, device_id, sync_module_states)
-    ref_model = build_fsdp(ref_model, device_id, sync_module_states)
+    policy_model = build_fsdp(policy_model, device_id, sync_module_states, use_orig_params)
+    ref_model = build_fsdp(ref_model, device_id, sync_module_states, use_orig_params)
     ref_model.eval()
     ref_model.requires_grad_(False)
 
